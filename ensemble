@@ -1,0 +1,131 @@
+import torch
+import torch.nn as nn
+import torchvision
+import torchvision.transforms as transforms
+import timm
+from torch.nn.functional import softmax
+from sklearn.metrics import classification_report
+
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+batch_size = 10
+img_size = {"s": [224, 224],  # train_size, val_size
+                "m": [384, 480],
+                "l": [384, 416]}
+num_model = "l"
+
+train_dataset = torchvision.datasets.ImageFolder(root='./data/train',
+                                    transform=transforms.Compose([transforms.RandomResizedCrop(img_size[num_model][0]),
+                                     transforms.RandomHorizontalFlip(),
+                                     transforms.ToTensor(),
+                                     transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])]),
+                                            )
+
+test_dataset = torchvision.datasets.ImageFolder(root='./data/val',
+                                   transform=transforms.Compose([transforms.Resize(img_size[num_model][1]),
+                                   transforms.CenterCrop(img_size[num_model][1]),
+                                   transforms.ToTensor(),
+                                   transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])]))
+
+train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
+                                           batch_size=batch_size,
+                                           shuffle=True)
+
+test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
+                                          batch_size=batch_size,
+                                          shuffle=False)
+
+
+model1 = timm.create_model('efficientnetv2_rw_m', pretrained=True,num_classes=4)
+model1.load_state_dict(torch.load('./weights/base-model-59.pth'))
+model1.to(device)
+
+model2 = timm.create_model('efficientnetv2_rw_m', pretrained=True,num_classes=4)
+model2.load_state_dict(torch.load('./weights/efficientnetv2_rw_m/second-model-epoch=10--9.pth'))
+model2.to(device)
+
+model3 = timm.create_model('efficientnetv2_rw_m', pretrained=True,num_classes=4)
+model3.load_state_dict(torch.load('./weights/efficientnetv2_rw_m/second-model-epoch=14--9.pth'))
+model3.to(device)
+
+model4 = timm.create_model('efficientnetv2_rw_m', pretrained=True,num_classes=4)
+model4.load_state_dict(torch.load('./weights/efficientnetv2_rw_m/distinguish1-2-second-model--9.pth'))
+model4.to(device)
+
+weight=[0.1,0.5,0.2,0.2]
+#weight=[0.1,0.5,0.2,0.2]
+criterion = nn.CrossEntropyLoss()
+
+model1.eval()# eval mode (batchnorm uses moving mean/variance instead of mini-batch mean/variance)
+model2.eval()
+model3.eval()
+model4.eval()
+
+val_list = []
+pred_list = []
+with torch.no_grad():
+    correct = 0
+    total = 0
+    for images, labels in test_loader:
+        for t in labels:
+            val_list.append(t.data.item())
+        images = images.to(device)
+        labels = labels.to(device)
+
+        outputs1 = model1(images)
+        outputs2 = model2(images)
+        outputs3 = model3(images)
+        outputs4 = model4(images)
+
+        # print(outputs1)
+        # print(outputs1.shape)
+
+
+        output1 = softmax(outputs1.data,dim=1)
+
+        # print(outputs1)
+        # print(outputs1.shape)
+
+        output2 = softmax(outputs2.data,dim=1)
+        output3 = softmax(outputs3.data,dim=1)
+        output4 = softmax(outputs4.data,dim=1)
+
+        # output = output1 * weight[0] + output2 * weight[1] + output3 * weight[2] + output4 * weight[3]
+
+        output = output1 * weight[0] + output2 * weight[1] + output3 * weight[2] + output4 * weight[3]
+        # print(outputs)
+
+        predicted = torch.argmax(output,dim=1)
+
+
+
+
+        # print(predicted)
+
+        # _, predicted = torch.max(outputs.data, 1)
+        for p in predicted:
+            pred_list.append(p.data.item())
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
+
+        # # _, predicted = torch.max(outputs.data, 1)
+        # for p in predicted:
+        #     pred_list.append(p.data.item())
+        # total += labels.size(0)
+        # correct += (predicted == labels).sum().item()
+        #
+        # # _, predicted = torch.max(outputs.data, 1)
+        # for p in predicted:
+        #     pred_list.append(p.data.item())
+        # total += labels.size(0)
+        # correct += (predicted == labels).sum().item()
+        #
+        # # _, predicted = torch.max(outputs.data, 1)
+        # for p in predicted:
+        #     pred_list.append(p.data.item())
+        # total += labels.size(0)
+        # correct += (predicted == labels).sum().item()
+
+    print('Test Accuracy of the model_all on the  test images: {} %'.format(100 * correct / total))
+
+print(classification_report(val_list, pred_list,target_names=train_dataset.class_to_idx))
