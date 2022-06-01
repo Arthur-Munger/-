@@ -1,0 +1,45 @@
+import torch
+import torch.nn as nn
+import torchvision
+import torchvision.transforms as transforms
+import urllib
+from PIL import Image
+from timm.data import resolve_data_config
+from timm.data.transforms_factory import create_transform
+import os
+import matplotlib.pyplot as plt
+import timm
+import numpy as np
+img_size = {    "s": [224, 224],  # train_size, val_size
+                "m": [384, 480],
+                "l": [384, 480]}
+
+num_model = "s"
+data_transform = transforms.Compose(
+        [transforms.Resize(img_size[num_model][1]),
+         transforms.ToTensor(),
+         transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])])
+# [N, C, H, W]
+model = timm.create_model('efficientnet_b0', pretrained=True,num_classes=4)
+model.load_state_dict(torch.load('./weights/model-4.pth'))
+model.eval()
+#test_dir = "../../test"
+test_dir = "./data/train/0"
+img_name_list = os.listdir(test_dir)
+ans = []
+with torch.no_grad():
+    for img_name in img_name_list:
+        # 拿到图片编号
+        img_num = img_name.split(".")[0]
+        img_path = os.path.join(test_dir, img_name)
+        img = Image.open(img_path)
+        # 得到预测结果
+        img = data_transform(img)
+        img = torch.unsqueeze(img, dim=0)
+        outputs = model(img)
+        _, predicted = torch.max(outputs.data, 1)
+        print(predicted)
+        predicted_numpy = predicted.numpy()
+        ans.append([str(img_name), int(predicted_numpy)])
+
+np.save("./pre.npy", ans)
